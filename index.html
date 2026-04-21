@@ -2,26 +2,57 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>TDX CCTV 最終測試</title>
+    <title>台北市即時影像 (iframe 版)</title>
     <style>
-        body { font-family: sans-serif; background: #f0f2f5; padding: 20px; }
-        #display { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
-        .card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .card p { padding: 8px; margin: 0; font-size: 13px; background: #eee; }
-        img { width: 100%; height: 200px; background: #000; display: block; object-fit: cover; }
-        .error-box { background: #fff5f5; border: 1px solid #ff0000; padding: 20px; border-radius: 8px; }
+        body { font-family: sans-serif; background: #f4f4f9; padding: 20px; }
+        h1 { text-align: center; }
+        #display { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); 
+            gap: 20px; 
+        }
+        .card { 
+            background: white; 
+            border-radius: 10px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+            overflow: hidden; 
+            display: flex; 
+            flex-direction: column;
+        }
+        .card p { 
+            padding: 10px; 
+            margin: 0; 
+            font-size: 14px; 
+            font-weight: bold; 
+            background: #333; 
+            color: white; 
+        }
+        /* 讓 iframe 比例正確 (16:9) */
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 Aspect Ratio */
+            background: #000;
+        }
+        iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
     </style>
 </head>
 <body>
-    <h1>台北市即時影像測試</h1>
-    <div id="display">正在通訊中...</div>
+    <h1>台北市交通即時影像</h1>
+    <div id="display">正在載入影像清單...</div>
 
 <script>
-    // 1. 請務必填入有效金鑰
+    // 請填入你的金鑰
     const ID = 'iotrobchen-b5b93caa-f0ca-455a';
     const SECRET = '7c3b0b4d-50cf-4b34-9110-b5a1afa425cf';
 
-    // 2. 嘗試使用不同的 API 路徑 (如果 City 抓不到，可以換成 InterCity 試試)
     const PROXY = "https://corsproxy.io/?";
     const AUTH_URL = `${PROXY}https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token`;
     const API_URL = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/Taipei?$top=30&$format=JSON`;
@@ -29,39 +60,42 @@
     async function start() {
         const el = document.getElementById('display');
         try {
-            // A. 驗證
+            // 1. 取得 Token
             const auth = await fetch(AUTH_URL, {
                 method: 'POST',
                 headers: { 'content-type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ grant_type: 'client_credentials', client_id: ID, client_secret: SECRET })
             });
             const authData = await auth.json();
-            if (!auth.ok) throw new Error("Token 取得失敗：" + JSON.stringify(authData));
-
-            // B. 抓資料
+            
+            // 2. 抓取資料
             const res = await fetch(API_URL, { headers: { 'Authorization': `Bearer ${authData.access_token}` } });
             const result = await res.json();
             
-            // C. 解析資料結構 (TDX 有時回傳 Array，有時回傳 Object 帶 value)
-            const list = Array.isArray(result) ? result : (result.value || []);
+            // 3. 關鍵修正：讀取 result.CCTVs
+            const list = result.CCTVs || [];
             
             if (list.length === 0) {
-                el.innerHTML = `<div class="error-box">驗證成功，但 API 回傳陣列為空。<br>回傳內容：${JSON.stringify(result)}</div>`;
+                el.innerHTML = "找不到監視器資料。";
                 return;
             }
 
-            // D. 渲染
             el.innerHTML = '';
             list.forEach(item => {
-                const url = item.VideoStreamURL.replace("http://", "https://");
                 const div = document.createElement('div');
                 div.className = 'card';
-                div.innerHTML = `<p>${item.CCTVName}</p><img src="${url}" onerror="this.src='https://placehold.co/300x200?text=影像離線'">`;
+                // 使用 iframe 嵌入台北市的影像網頁
+                div.innerHTML = `
+                    <p>${item.RoadName || ''} ${item.CCTVID}</p>
+                    <div class="video-container">
+                        <iframe src="${item.VideoStreamURL}" allowfullscreen></iframe>
+                    </div>
+                `;
                 el.appendChild(div);
             });
 
         } catch (err) {
-            el.innerHTML = `<div class="error-box">錯誤：${err.message}</div>`;
+            el.innerHTML = "錯誤：" + err.message;
         }
     }
 
