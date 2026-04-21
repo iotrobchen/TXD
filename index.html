@@ -2,113 +2,70 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TDX 台北市即時影像測試</title>
+    <title>TDX CCTV 最終測試</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
-        h1 { text-align: center; color: #333; }
-        #display { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; max-width: 1200px; margin: 0 auto; }
-        .cctv-item { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow: hidden; transition: transform 0.2s; }
-        .cctv-item:hover { transform: translateY(-5px); }
-        .cctv-item p { padding: 12px; margin: 0; font-size: 14px; font-weight: bold; color: #444; background: #fafafa; border-bottom: 1px solid #eee; }
-        .cctv-item img { width: 100%; height: 225px; object-fit: cover; display: block; background: #000; }
-        .status-msg { text-align: center; padding: 20px; font-size: 18px; color: #666; }
-        .error { color: #d9534f; background: #fdf7f7; border: 1px solid #d9534f; padding: 10px; border-radius: 5px; }
+        body { font-family: sans-serif; background: #f0f2f5; padding: 20px; }
+        #display { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+        .card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .card p { padding: 8px; margin: 0; font-size: 13px; background: #eee; }
+        img { width: 100%; height: 200px; background: #000; display: block; object-fit: cover; }
+        .error-box { background: #fff5f5; border: 1px solid #ff0000; padding: 20px; border-radius: 8px; }
     </style>
 </head>
 <body>
-
-    <h1>台北市即時交通影像</h1>
-    <div id="display" class="status-msg">正在初始化驗證並取得資料...</div>
+    <h1>台北市即時影像測試</h1>
+    <div id="display">正在通訊中...</div>
 
 <script>
-    // ==========================================
-    // 1. 設定區：請填入你的新 API 金鑰
-    // ==========================================
-    const CLIENT_ID = 'iotrobchen-b5b93caa-f0ca-455a'; 
-    const CLIENT_SECRET = '7c3b0b4d-50cf-4b34-9110-b5a1afa425cf'; 
+    // 1. 請務必填入有效金鑰
+    const ID = 'iotrobchen-b5b93caa-f0ca-455a';
+    const SECRET = '7c3b0b4d-50cf-4b34-9110-b5a1afa425cf';
 
-    // 代理與 API 路徑
-    const proxy = "https://corsproxy.io/?";
-    const auth_url = `${proxy}https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token`;
-    const api_url = `${proxy}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/Taipei?$top=20&$format=JSON`;
+    // 2. 嘗試使用不同的 API 路徑 (如果 City 抓不到，可以換成 InterCity 試試)
+    const PROXY = "https://corsproxy.io/?";
+    const AUTH_URL = `${PROXY}https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token`;
+    const API_URL = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/Taipei?$top=30&$format=JSON`;
 
-    async function initCCTV() {
-        const displayDiv = document.getElementById('display');
-
+    async function start() {
+        const el = document.getElementById('display');
         try {
-            // STEP 1: 取得 Access Token
-            console.log("正在取得 Token...");
-            const authRes = await fetch(auth_url, {
+            // A. 驗證
+            const auth = await fetch(AUTH_URL, {
                 method: 'POST',
                 headers: { 'content-type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                    grant_type: 'client_credentials',
-                    client_id: CLIENT_ID,
-                    client_secret: CLIENT_SECRET
-                })
+                body: new URLSearchParams({ grant_type: 'client_credentials', client_id: ID, client_secret: SECRET })
             });
+            const authData = await auth.json();
+            if (!auth.ok) throw new Error("Token 取得失敗：" + JSON.stringify(authData));
 
-            if (!authRes.ok) throw new Error(`驗證失敗 (Status: ${authRes.status})。請檢查 Client ID/Secret 是否正確。`);
+            // B. 抓資料
+            const res = await fetch(API_URL, { headers: { 'Authorization': `Bearer ${authData.access_token}` } });
+            const result = await res.json();
             
-            const authData = await authRes.json();
-            const token = authData.access_token;
-
-            // STEP 2: 取得 CCTV 資料
-            console.log("Token 取得成功，正在請求影像資料...");
-            const apiRes = await fetch(api_url, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (!apiRes.ok) throw new Error(`API 請求失敗 (Status: ${apiRes.status})`);
+            // C. 解析資料結構 (TDX 有時回傳 Array，有時回傳 Object 帶 value)
+            const list = Array.isArray(result) ? result : (result.value || []);
             
-            const data = await apiRes.json();
-            console.log("原始回傳資料:", data);
-
-            // STEP 3: 渲染畫面
-            renderUI(data);
-
-        } catch (err) {
-            console.error(err);
-            displayDiv.innerHTML = `<div class="error">發生錯誤: ${err.message}</div>`;
-        }
-    }
-
-    function renderUI(data) {
-        const container = document.getElementById('display');
-        container.innerHTML = '';
-        container.classList.remove('status-msg');
-
-        // 自動處理 TDX 可能回傳的兩種格式：[...陣列] 或 { value: [...陣列] }
-        const cctvList = Array.isArray(data) ? data : (data.value || []);
-
-        if (cctvList.length === 0) {
-            container.innerHTML = '<div>目前沒有可用的影像資料。</div>';
-            return;
-        }
-
-        cctvList.forEach(item => {
-            // 處理 http 轉 https 問題，避免 GitHub Pages 阻擋內容
-            let imgUrl = item.VideoStreamURL || "";
-            if (imgUrl.startsWith("http://")) {
-                imgUrl = imgUrl.replace("http://", "https://");
+            if (list.length === 0) {
+                el.innerHTML = `<div class="error-box">驗證成功，但 API 回傳陣列為空。<br>回傳內容：${JSON.stringify(result)}</div>`;
+                return;
             }
 
-            const card = document.createElement('div');
-            card.className = 'cctv-item';
-            card.innerHTML = `
-                <p>${item.CCTVName}</p>
-                <img src="${imgUrl}" 
-                     alt="即時影像" 
-                     onerror="this.onerror=null; this.src='https://placehold.co/300x225?text=影像載入失敗';">
-            `;
-            container.appendChild(card);
-        });
+            // D. 渲染
+            el.innerHTML = '';
+            list.forEach(item => {
+                const url = item.VideoStreamURL.replace("http://", "https://");
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.innerHTML = `<p>${item.CCTVName}</p><img src="${url}" onerror="this.src='https://placehold.co/300x200?text=影像離線'">`;
+                el.appendChild(div);
+            });
+
+        } catch (err) {
+            el.innerHTML = `<div class="error-box">錯誤：${err.message}</div>`;
+        }
     }
 
-    // 啟動程式
-    initCCTV();
-
+    start();
 </script>
 </body>
 </html>
