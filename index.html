@@ -1,62 +1,54 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <title>TDX CCTV 測試</title>
-    <style>
-        .cctv-container { display: flex; flex-wrap: wrap; gap: 10px; }
-        .cctv-item { border: 1px solid #ccc; padding: 10px; width: 320px; }
-        img { width: 100%; background: #eee; }
-    </style>
-</head>
-<body>
-    <h1>台北市即時影像測試</h1>
-    <div id="display" class="cctv-container">載入中...</div>
+async function getCCTV() {
+    const client_id = '你的ID';
+    const client_secret = '你的Secret';
+    
+    // 使用 corsproxy.io 避開前端阻擋問題
+    const proxy = "https://corsproxy.io/?";
+    const auth_url = `${proxy}https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token`;
+    const api_url = `${proxy}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/Taipei?$top=10&$format=JSON`;
 
-    <script>
-        async function getCCTV() {
-            const client_id = 'YOUR_CLIENT_ID'; // 填入你的 ID
-            const client_secret = 'YOUR_CLIENT_SECRET'; // 填入你的 Secret
+    try {
+        console.log("正在取得 Token...");
+        const authRes = await fetch(auth_url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                grant_type: 'client_credentials',
+                client_id: client_id,
+                client_secret: client_secret
+            })
+        });
 
-            try {
-                // 1. 取得 Token
-                const authRes = await fetch('https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token', {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({
-                        grant_type: 'client_credentials',
-                        client_id: client_id,
-                        client_secret: client_secret
-                    })
-                });
-                const authData = await authRes.json();
-                const token = authData.access_token;
+        if (!authRes.ok) throw new Error(`Token 取得失敗: ${authRes.status}`);
+        const authData = await authRes.json();
+        const token = authData.access_token;
 
-                // 2. 取得台北市 CCTV 列表 (取前 10 筆測試)
-                const apiRes = await fetch('https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/Taipei?$top=10&$format=JSON', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await apiRes.json();
+        console.log("Token 取得成功，正在抓取 CCTV 資料...");
+        const apiRes = await fetch(api_url, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
 
-                // 3. 渲染到網頁
-                const container = document.getElementById('display');
-                container.innerHTML = '';
-                data.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'cctv-item';
-                    div.innerHTML = `
-                        <p>${item.CCTVName}</p>
-                        <img src="${item.VideoStreamURL}" alt="監視器畫面" onerror="this.src='https://placehold.co/300x200?text=Image+Offline'">
-                    `;
-                    container.appendChild(div);
-                });
-            } catch (err) {
-                console.error('發生錯誤:', err);
-                document.getElementById('display').innerText = '讀取失敗，請檢查主控台';
-            }
-        }
+        const data = await apiRes.json();
+        renderCCTV(data);
+    } catch (err) {
+        console.error('詳細錯誤訊息:', err);
+        document.getElementById('display').innerText = '失敗原因: ' + err.message;
+    }
+}
 
-        getCCTV();
-    </script>
-</body>
-</html>
+function renderCCTV(data) {
+    const container = document.getElementById('display');
+    container.innerHTML = '';
+    data.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'cctv-item';
+        // 台北市的影像網址有些需要補後綴或處理，這裡直接嘗試顯示
+        div.innerHTML = `
+            <p><strong>${item.CCTVName}</strong></p>
+            <img src="${item.VideoStreamURL}" alt="即時影像" 
+                 style="width:100%; min-height:200px; background:#000;"
+                 onerror="this.onerror=null; this.src='https://placehold.co/300x200?text=Wait+for+Update';">
+        `;
+        container.appendChild(div);
+    });
+}
