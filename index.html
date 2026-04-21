@@ -1,14 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>TDX CCTV 測試</title>
+    <style>
+        .cctv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; padding: 20px; }
+        .cctv-item { border: 1px solid #ddd; border-radius: 8px; overflow: hidden; background: #f9f9f9; text-align: center; }
+        .cctv-item p { padding: 10px; margin: 0; font-weight: bold; background: #eee; font-size: 14px; }
+        .cctv-item img { width: 100%; height: 225px; object-fit: cover; display: block; background: #000; }
+    </style>
+</head>
+<body>
+    <h2 style="text-align:center;">台北市即時交通影像測試</h2>
+    <div id="display" class="cctv-grid">正在初始化並取得 Token...</div>
+
+<script>
 async function getCCTV() {
-    const client_id = 'iotrobchen-b5b93caa-f0ca-455a';
-    const client_secret = '7c3b0b4d-50cf-4b34-9110-b5a1afa425cf';
-    
-    // 使用 corsproxy.io 避開前端阻擋問題
+    // 請將以下更換為你新申請的 Key
+    const client_id = 'iotrobchen-b5b93caa-f0ca-455a'; 
+    const client_secret = '7c3b0b4d-50cf-4b34-9110-b5a1afa425cf'; 
+
     const proxy = "https://corsproxy.io/?";
     const auth_url = `${proxy}https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token`;
-    const api_url = `${proxy}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/Taipei?$top=10&$format=JSON`;
+    const api_url = `${proxy}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/Taipei?$top=12&$format=JSON`;
 
     try {
-        console.log("正在取得 Token...");
+        // 1. 取得 Token
         const authRes = await fetch(auth_url, {
             method: 'POST',
             headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -19,36 +36,45 @@ async function getCCTV() {
             })
         });
 
-        if (!authRes.ok) throw new Error(`Token 取得失敗: ${authRes.status}`);
+        if (!authRes.ok) throw new Error(`驗證失敗: ${authRes.status}`);
         const authData = await authRes.json();
         const token = authData.access_token;
 
-        console.log("Token 取得成功，正在抓取 CCTV 資料...");
+        // 2. 取得資料
         const apiRes = await fetch(api_url, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-
+        if (!apiRes.ok) throw new Error(`API 請求失敗: ${apiRes.status}`);
+        
         const data = await apiRes.json();
         renderCCTV(data);
     } catch (err) {
-        console.error('詳細錯誤訊息:', err);
-        document.getElementById('display').innerText = '失敗原因: ' + err.message;
+        console.error('Debug:', err);
+        document.getElementById('display').innerHTML = `<p style="color:red;">錯誤: ${err.message}</p>`;
     }
 }
 
 function renderCCTV(data) {
     const container = document.getElementById('display');
     container.innerHTML = '';
+
     data.forEach(item => {
+        // 修正台北市網址可能產生的 Mixed Content 問題 (http 改為 https)
+        let videoUrl = item.VideoStreamURL.replace("http://", "https://");
+        
         const div = document.createElement('div');
         div.className = 'cctv-item';
-        // 台北市的影像網址有些需要補後綴或處理，這裡直接嘗試顯示
         div.innerHTML = `
-            <p><strong>${item.CCTVName}</strong></p>
-            <img src="${item.VideoStreamURL}" alt="即時影像" 
-                 style="width:100%; min-height:200px; background:#000;"
-                 onerror="this.onerror=null; this.src='https://placehold.co/300x200?text=Wait+for+Update';">
+            <p>${item.CCTVName}</p>
+            <img src="${videoUrl}" 
+                 alt="監視器畫面" 
+                 onerror="this.onerror=null; this.src='https://placehold.co/300x225?text=影像載入中或失效';">
         `;
         container.appendChild(div);
     });
 }
+
+getCCTV();
+</script>
+</body>
+</html>
