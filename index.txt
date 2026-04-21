@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>後村堰飛行觀測站 - 靜態版</title>
+    <script src="https://jsdelivr.net"></script>
+    <style>
+        body { font-family: "Microsoft JhengHei", sans-serif; background: #1a1a1a; color: #eee; text-align: center; }
+        .container { max-width: 800px; margin: auto; padding: 20px; }
+        video { width: 100%; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .status-bar { font-size: 0.9em; color: #888; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>柑園二橋即時影像 (10min 快取模式)</h2>
+    <video id="video" controls autoplay muted></video>
+    <div id="msg" class="status-bar">正在檢查快取...</div>
+</div>
+
+<script>
+    const CLIENT_ID = 'iotrobchen-b5b93caa-f0ca-455a';
+    const CLIENT_SECRET = '7c3b0b4d-50cf-4b34-9110-b5a1afa425cf';
+    const CACHE_KEY = 'tdx_cctv_cache';
+    const EXPIRE_TIME = 10 * 60 * 1000; // 10 分鐘
+
+    async function fetchCCTV() {
+        const now = Date.now();
+        const cached = JSON.parse(localStorage.getItem(CACHE_KEY));
+
+        // 1. 檢查快取是否存在且未過期
+        if (cached && (now - cached.timestamp < EXPIRE_TIME)) {
+            updateStatus(`使用快取資料 (剩餘 ${Math.round((EXPIRE_TIME - (now - cached.timestamp))/1000)} 秒更新)`);
+            playVideo(cached.url);
+            return;
+        }
+
+        // 2. 快取失效，重新抓取 (注意：這在本地開發可能因 CORS 失敗)
+        updateStatus("快取過期，正在更新 API...");
+        try {
+            // 取得 Token
+            const tokenRes = await fetch('https://transportdata.tw', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `grant_type=client_credentials&client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}`
+            });
+            const tokenData = await tokenRes.json();
+            const token = tokenData.access_token;
+
+            // 取得 CCTV
+            const cctvRes = await fetch('https://transportdata.tw', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const cctvData = await cctvRes.json();
+            const videoUrl = cctvData[0].VideoStreamURL;
+
+            // 3. 寫入快取
+            localStorage.setItem(CACHE_KEY, JSON.stringify({
+                url: videoUrl,
+                timestamp: now
+            }));
+
+            playVideo(videoUrl);
+            updateStatus("API 更新成功！");
+        } catch (err) {
+            updateStatus("API 抓取失敗 (可能是 CORS 限制)");
+            console.error(err);
+        }
+    }
+
+    function playVideo(url) {
+        const video = document.getElementById('video');
+        if (Hls.isSupported()) {
+            const hls = new Hls();
+            hls.loadSource(url);
+            hls.attachMedia(video);
+        } else {
+            video.src = url;
+        }
+    }
+
+    function updateStatus(text) {
+        document.getElementById('msg').innerText = text;
+    }
+
+    // 啟動
+    fetchCCTV();
+    // 每 10 分鐘自動檢查一次
+    setInterval(fetchCCTV, 60000); 
+</script>
+</body>
+</html>
