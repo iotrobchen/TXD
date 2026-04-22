@@ -2,16 +2,17 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>飛行觀測最終修復版</title>
+    <title>飛行觀測終極修復</title>
     <style>
         body { font-family: sans-serif; background: #121212; color: #eee; padding: 20px; text-align: center; }
-        .input-box { background: #222; padding: 20px; border-radius: 12px; margin: 10px; display: inline-block; }
-        input { padding: 10px; width: 220px; margin: 5px; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; }
-        button { padding: 10px 25px; background: #ff9800; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .input-box { background: #222; padding: 20px; border-radius: 12px; margin: 10px; display: inline-block; border: 1px solid #444; }
+        input { padding: 10px; width: 220px; margin: 5px; border-radius: 5px; border: none; background: #000; color: #fff; }
+        button { padding: 10px 25px; background: #4caf50; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; max-width: 1200px; margin: 20px auto; }
         .card { background: #1e1e1e; border-radius: 8px; overflow: hidden; border: 1px solid #333; }
         img { width: 100%; height: 210px; background: #000; object-fit: contain; }
-        p { padding: 10px; margin: 0; font-size: 13px; text-align: left; background: #333; }
+        p { padding: 10px; margin: 0; font-size: 13px; text-align: left; background: #333; min-height: 40px; }
+        #status { color: #ffeb3b; margin: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -19,14 +20,14 @@
     <h1>🚁 飛行區公路影像觀測</h1>
 
     <div class="input-box">
-        <input type="text" id="cid" placeholder="Client ID">
+        <input type="text" id="cid" placeholder="Client ID" value="iotrobchen-b5b93caa-f0ca-455a">
         <input type="password" id="csec" placeholder="Client Secret">
         <button onclick="start()">啟動連線</button>
     </div>
 
-    <div id="status" style="color: #ffeb3b; margin: 10px;"></div>
+    <div id="status">請輸入 Secret 後按下啟動</div>
 
-    <div style="text-align:left; max-width:1200px; margin: 0 auto; color:#ff9800; font-weight:bold;">📍 後村堰 & 浮洲觀測點</div>
+    <div style="text-align:left; max-width:1200px; margin: 0 auto; color:#4caf50; font-weight:bold; border-bottom: 2px solid #4caf50; padding-bottom: 5px;">📍 觀測點清單 (後村堰/浮洲)</div>
     <div id="display-grid" class="grid"></div>
 
 <script>
@@ -36,13 +37,13 @@
         const status = document.getElementById('status');
         const grid = document.getElementById('display-grid');
 
-        if(!ID || !SECRET) { status.innerText = "請輸入金鑰"; return; }
+        if(!SECRET) { status.innerText = "❌ 請輸入 Secret"; return; }
         
-        status.innerText = "⏳ 嘗試建立安全連線...";
+        status.innerText = "⏳ 正在驗證並抓取資料...";
         grid.innerHTML = "";
 
         try {
-            // 1. 取得 Token (直接向 TDX 請求，不透過 Proxy)
+            // 1. 取得 Token
             const authRes = await fetch("https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token", {
                 method: 'POST',
                 headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -53,43 +54,63 @@
                 })
             });
 
-            if (!authRes.ok) throw new Error("金鑰錯誤或被拒絕 (401/403)");
+            if (!authRes.ok) throw new Error("Token 驗證失敗 (401/403)");
             const authData = await authRes.json();
             const token = authData.access_token;
 
-            status.innerText = "✅ 驗證成功，正在下載公路資料...";
-
-            // 2. 取得國道資料 (國道資料最穩定)
+            // 2. 取得國道 CCTV 資料
+            // 修正：確保 URL 參數正確
             const apiRes = await fetch("https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON", {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await apiRes.json();
-            const list = data.value || data;
+            
+            const rawData = await apiRes.json();
+            console.log("原始回傳資料:", rawData);
 
-            // 3. 過濾並渲染 (鎖定後村堰與浮洲中間的台65與國3)
+            // 核心修正：強制轉換為陣列
+            let list = [];
+            if (Array.isArray(rawData)) {
+                list = rawData;
+            } else if (rawData && typeof rawData === 'object' && Array.isArray(rawData.value)) {
+                list = rawData.value;
+            } else {
+                console.error("資料結構異常:", rawData);
+                throw new Error("API 回傳格式不正確，請查看 Console");
+            }
+
+            // 3. 過濾座標 (半徑約 6km)
             const targetHCY = { lat: 24.9655, lon: 121.3739 };
             const targetFZ = { lat: 25.002, lon: 121.445 };
 
             const filtered = list.filter(item => {
-                const nearHCY = Math.abs(item.PositionLat - targetHCY.lat) < 0.05 && Math.abs(item.PositionLon - targetHCY.lon) < 0.05;
-                const nearFZ = Math.abs(item.PositionLat - targetFZ.lat) < 0.05 && Math.abs(item.PositionLon - targetFZ.lon) < 0.05;
+                if (!item.PositionLat || !item.PositionLon) return false;
+                const nearHCY = Math.abs(item.PositionLat - targetHCY.lat) < 0.06 && Math.abs(item.PositionLon - targetHCY.lon) < 0.06;
+                const nearFZ = Math.abs(item.PositionLat - targetFZ.lat) < 0.06 && Math.abs(item.PositionLon - targetFZ.lon) < 0.06;
                 return nearHCY || nearFZ;
             });
 
-            if(filtered.length === 0) { status.innerText = "⚠️ 範圍內無可用公路影像"; return; }
+            if(filtered.length === 0) { 
+                status.innerText = "⚠️ 範圍內無可用公路影像"; 
+                return; 
+            }
 
+            // 4. 渲染
             filtered.forEach(item => {
                 const imgUrl = item.VideoStreamURL.replace("http://", "https://");
                 const card = document.createElement('div');
                 card.className = 'card';
-                card.innerHTML = `<img src="${imgUrl}" onerror="this.src='https://placehold.co/300x210?text=影像離線';"><p>${item.CCTVName}</p>`;
+                card.innerHTML = `
+                    <img src="${imgUrl}" onerror="this.onerror=null; this.src='https://placehold.co/300x210?text=影像載入中...';">
+                    <p>${item.CCTVName}</p>
+                `;
                 grid.appendChild(card);
             });
 
-            status.innerText = "觀測中";
+            status.innerText = "✅ 觀測中 - 成功找到 " + filtered.length + " 個觀測點";
 
         } catch (e) {
-            status.innerText = "❌ 連線失敗: " + e.message + "。請嘗試換個瀏覽器或關閉廣告攔截器。";
+            console.error(e);
+            status.innerHTML = `<span style="color:#f44336;">❌ 錯誤: ${e.message}</span>`;
         }
     }
 </script>
