@@ -1,107 +1,54 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>飛行觀測儀表板</title>
-    <style>
-        body { font-family: sans-serif; background: #121212; color: #eee; text-align: center; padding: 20px; margin: 0; }
-        .input-box { background: #222; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: inline-block; border: 1px solid #333; }
-        input { padding: 10px; width: 220px; margin: 5px; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; }
-        button { padding: 10px 25px; background: #2e7d32; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
-        #status { margin: 15px; color: #ffeb3b; font-weight: bold; min-height: 24px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; max-width: 1200px; margin: 0 auto; }
-        .card { background: #1e1e1e; border-radius: 10px; overflow: hidden; border: 1px solid #333; transition: 0.3s; }
-        .card:hover { border-color: #4caf50; }
-        img { width: 100%; height: 225px; background: #000; display: block; object-fit: contain; }
-        .card-info { padding: 12px; font-size: 13px; text-align: left; background: #263238; border-top: 1px solid #333; }
-    </style>
+  <meta charset="UTF-8">
+  <title>後村堰附近路況</title>
 </head>
 <body>
+  <h2>新北市即時路況影像</h2>
+  <div id="images"></div>
 
-    <h1>🚁 飛行區公路即時影像</h1>
+  <script>
+    const token = "你的Access Token";
 
-    <div class="input-box">
-        <input type="text" id="cid" placeholder="Client ID" value="iotrobchen-b5b93caa-f0ca-455a">
-        <input type="password" id="csec" placeholder="請貼上 Client Secret">
-        <button onclick="start()">啟動連線</button>
-    </div>
+    async function loadCCTV() {
+      const res = await fetch(
+        "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/NewTaipei?$format=JSON",
+        {
+          headers: {
+            "Authorization": "Bearer " + token
+          }
+        }
+      );
 
-    <div id="status">準備就緒</div>
+      const data = await res.json();
 
-    <div id="display-grid" class="grid"></div>
+      // 👉 篩選「後村堰」附近（用關鍵字）
+      const filtered = data.filter(cctv =>
+        cctv.LocationDescription &&
+        cctv.LocationDescription.includes("後村堰")
+      );
 
-<script>
-    async function start() {
-        const ID = document.getElementById('cid').value.trim();
-        const SECRET = document.getElementById('csec').value.trim();
-        const status = document.getElementById('status');
-        const grid = document.getElementById('display-grid');
+      const container = document.getElementById("images");
+      container.innerHTML = "";
 
-        if(!SECRET) { status.innerText = "❌ 請輸入 Secret"; return; }
-        status.innerText = "⏳ 正在處理中，請稍候...";
-        grid.innerHTML = "";
+      filtered.forEach(cctv => {
+        const img = document.createElement("img");
+        img.src = cctv.CCTVPictures[0].ImageUrl;
+        img.width = 400;
 
-        // 使用 AllOrigins 代理處理 CORS 問題
-        const proxy = "https://api.allorigins.win/raw?url=";
+        const title = document.createElement("p");
+        title.innerText = cctv.LocationDescription;
 
-        try {
-            // 1. 取得 Token
-            const authUrl = encodeURIComponent("https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token");
-            const authRes = await fetch(proxy + authUrl, {
-                method: 'POST',
-                headers: { 'content-type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                    grant_type: 'client_credentials',
-                    client_id: ID,
-                    client_secret: SECRET
-                })
-            });
+        container.appendChild(title);
+        container.appendChild(img);
+      });
+    }
 
-            const authData = await authRes.json();
-            if (!authData.access_token) throw new Error("無法取得授權碼，請檢查 Secret");
-            
-            status.innerText = "✅ 驗證成功，獲取公路影像中...";
+    loadCCTV();
 
-            // 2. 獲取 CCTV 資料
-            const apiUrl = encodeURIComponent("https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON");
-            const apiRes = await fetch(proxy + apiUrl, {
-                headers: { 'Authorization': `Bearer ${authData.access_token}` }
-            });
-
-            const rawData = await apiRes.json();
-            
-            // --- 超強健資料解析 ---
-            let list = [];
-            if (Array.isArray(rawData)) {
-                list = rawData;
-            } else if (rawData.value && Array.isArray(rawData.value)) {
-                list = rawData.value;
-            } else if (typeof rawData === 'string') {
-                // 有時代理會回傳字串化的 JSON
-                const parsed = JSON.parse(rawData);
-                list = parsed.value || parsed;
-            }
-
-            if (!Array.isArray(list)) throw new Error("資料解析失敗，請重新整理");
-
-            // 3. 過濾座標 (中心點: 後村堰 24.965, 121.373)
-            const filtered = list.filter(item => {
-                const lat = item.PositionLat;
-                const lon = item.PositionLon;
-                // 擴大搜索範圍至 8 公里 (約 0.07 度) 確保能看到國道影像
-                return Math.abs(lat - 24.9655) < 0.07 && Math.abs(lon - 121.3739) < 0.07;
-            });
-
-            if(filtered.length === 0) {
-                status.innerText = "⚠️ 附近 8 公里內無公路影像";
-                return;
-            }
-
-            // 4. 渲染畫面
-            filtered.forEach(item => {
-                const imgUrl = item.VideoStreamURL.replace("http://", "https://");
-                const card = document.createElement('div');
-                card.className = 'card';
-                card.innerHTML = `
-                    <img src="${imgUrl}" onerror="this.src='
+    // 每60秒更新
+    setInterval(loadCCTV, 60000);
+  </script>
+</body>
+</html>
