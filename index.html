@@ -2,63 +2,51 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>台北市即時影像 (iframe 版)</title>
+    <title>後村堰飛行場觀測地圖</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        body { font-family: sans-serif; background: #f4f4f9; padding: 20px; }
-        h1 { text-align: center; }
-        #display { 
-            display: grid; 
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); 
-            gap: 20px; 
-        }
-        .card { 
-            background: white; 
-            border-radius: 10px; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-            overflow: hidden; 
-            display: flex; 
-            flex-direction: column;
-        }
-        .card p { 
-            padding: 10px; 
-            margin: 0; 
-            font-size: 14px; 
-            font-weight: bold; 
-            background: #333; 
-            color: white; 
-        }
-        /* 讓 iframe 比例正確 (16:9) */
-        .video-container {
-            position: relative;
-            width: 100%;
-            padding-top: 56.25%; /* 16:9 Aspect Ratio */
-            background: #000;
-        }
-        iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none;
+        body, html { margin: 0; padding: 0; height: 100%; }
+        #map { width: 100%; height: 100vh; }
+        .popup-video { width: 320px; height: 240px; }
+        .info-panel {
+            position: absolute; top: 10px; left: 60px; z-index: 1000;
+            background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
     </style>
 </head>
 <body>
-    <h1>台北市交通即時影像</h1>
-    <div id="display">正在載入影像清單...</div>
+
+    <div class="info-panel">
+        <h3 style="margin:0">後村堰飛行場周邊即時影像</h3>
+        <p style="margin:5px 0 0; font-size:12px;">點擊地圖圖標查看氣候狀態</p>
+    </div>
+    <div id="map"></div>
 
 <script>
-    // 請填入你的金鑰
     const ID = 'iotrobchen-b5b93caa-f0ca-455a';
     const SECRET = '7c3b0b4d-50cf-4b34-9110-b5a1afa425cf';
 
+    // 飛行場座標 (大約位置)
+    const FLY_ZONE = [24.9665, 121.3935]; 
+
     const PROXY = "https://corsproxy.io/?";
     const AUTH_URL = `${PROXY}https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token`;
-    const API_URL = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/Taipei?$top=30&$format=JSON`;
+    // 改抓新北市 (NewTaipei) 的資料
+    const API_URL = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/NewTaipei?$format=JSON`;
 
-    async function start() {
-        const el = document.getElementById('display');
+    // 初始化地圖
+    const map = L.map('map').setView(FLY_ZONE, 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    // 標記飛行場位置
+    L.marker(FLY_ZONE, {title: "後村堰飛行場"}).addTo(map)
+        .bindPopup("<b>後村堰飛行場</b>").openPopup();
+
+    async function loadCCTV() {
         try {
             // 1. 取得 Token
             const auth = await fetch(AUTH_URL, {
@@ -67,39 +55,38 @@
                 body: new URLSearchParams({ grant_type: 'client_credentials', client_id: ID, client_secret: SECRET })
             });
             const authData = await auth.json();
-            
-            // 2. 抓取資料
+
+            // 2. 抓取新北市資料
             const res = await fetch(API_URL, { headers: { 'Authorization': `Bearer ${authData.access_token}` } });
             const result = await res.json();
-            
-            // 3. 關鍵修正：讀取 result.CCTVs
             const list = result.CCTVs || [];
-            
-            if (list.length === 0) {
-                el.innerHTML = "找不到監視器資料。";
-                return;
-            }
 
-            el.innerHTML = '';
-            list.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'card';
-                // 使用 iframe 嵌入台北市的影像網頁
-                div.innerHTML = `
-                    <p>${item.RoadName || ''} ${item.CCTVID}</p>
-                    <div class="video-container">
-                        <iframe src="${item.VideoStreamURL}" allowfullscreen></iframe>
+            // 3. 過濾出距離飛行場較近的監視器 (經緯度差異在 0.05 以內)
+            const nearby = list.filter(item => {
+                const dLat = Math.abs(item.PositionLat - FLY_ZONE[0]);
+                const dLon = Math.abs(item.PositionLon - FLY_ZONE[1]);
+                return dLat < 0.04 && dLon < 0.04; 
+            });
+
+            // 4. 將監視器加入地圖
+            nearby.forEach(item => {
+                const marker = L.marker([item.PositionLat, item.PositionLon]).addTo(map);
+                
+                // 點擊後顯示彈窗影像
+                marker.bindPopup(`
+                    <div class="popup-video">
+                        <p style="margin:0 0 5px; font-size:12px;"><b>${item.CCTVName}</b></p>
+                        <iframe src="${item.VideoStreamURL}" width="100%" height="200" frameborder="0" allowfullscreen></iframe>
                     </div>
-                `;
-                el.appendChild(div);
+                `);
             });
 
         } catch (err) {
-            el.innerHTML = "錯誤：" + err.message;
+            console.error("載入失敗:", err);
         }
     }
 
-    start();
+    loadCCTV();
 </script>
 </body>
 </html>
