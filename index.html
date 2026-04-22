@@ -2,139 +2,95 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>飛行觀測修復版</title>
+    <title>飛行觀測最終修復版</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: #eee; text-align: center; padding: 20px; }
-        .input-box { background: #222; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: inline-block; border: 1px solid #333; }
+        body { font-family: sans-serif; background: #121212; color: #eee; padding: 20px; text-align: center; }
+        .input-box { background: #222; padding: 20px; border-radius: 12px; margin: 10px; display: inline-block; }
         input { padding: 10px; width: 220px; margin: 5px; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; }
-        button { padding: 10px 25px; background: #00bcd4; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: #000; }
-        .status { margin: 15px; font-weight: bold; min-height: 24px; color: #ffeb3b; }
-        .tag { background: #004d40; color: #4db6ac; padding: 8px 15px; border-radius: 5px; text-align: left; margin: 30px auto 10px; max-width: 1200px; font-weight: bold; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; max-width: 1200px; margin: 0 auto; }
-        .card { background: #1e1e1e; border-radius: 10px; overflow: hidden; border: 1px solid #333; }
-        img { width: 100%; height: 225px; background: #000; display: block; object-fit: contain; }
-        .card-info { padding: 10px; font-size: 13px; text-align: left; background: #263238; }
+        button { padding: 10px 25px; background: #ff9800; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; max-width: 1200px; margin: 20px auto; }
+        .card { background: #1e1e1e; border-radius: 8px; overflow: hidden; border: 1px solid #333; }
+        img { width: 100%; height: 210px; background: #000; object-fit: contain; }
+        p { padding: 10px; margin: 0; font-size: 13px; text-align: left; background: #333; }
     </style>
 </head>
 <body>
 
-    <h1>🚁 飛行區周邊公路觀測</h1>
+    <h1>🚁 飛行區公路影像觀測</h1>
 
     <div class="input-box">
         <input type="text" id="cid" placeholder="Client ID">
         <input type="password" id="csec" placeholder="Client Secret">
-        <button onclick="start()">開始觀測</button>
+        <button onclick="start()">啟動連線</button>
     </div>
 
-    <div id="status" class="status">請輸入金鑰後點擊開始</div>
+    <div id="status" style="color: #ffeb3b; margin: 10px;"></div>
 
-    <div class="tag">📍 後村堰周邊 (國道3號/台65/台3)</div>
-    <div id="hcy-grid" class="grid"></div>
-
-    <div class="tag">📍 浮洲周邊 (台65/省道)</div>
-    <div id="fz-grid" class="grid"></div>
+    <div style="text-align:left; max-width:1200px; margin: 0 auto; color:#ff9800; font-weight:bold;">📍 後村堰 & 浮洲觀測點</div>
+    <div id="display-grid" class="grid"></div>
 
 <script>
-    // 使用 allorigins 代理並加上隨機參數防止快取
-    const PROXY = "https://api.allorigins.win/raw?url=";
-
     async function start() {
-        const cid = document.getElementById('cid').value.trim();
-        const csec = document.getElementById('csec').value.trim();
-        const statusEl = document.getElementById('status');
+        const ID = document.getElementById('cid').value.trim();
+        const SECRET = document.getElementById('csec').value.trim();
+        const status = document.getElementById('status');
+        const grid = document.getElementById('display-grid');
 
-        if (!cid || !csec) {
-            statusEl.innerText = "❌ 請輸入 ID 與 Secret";
-            return;
-        }
-
-        statusEl.innerText = "⏳ 正在驗證金鑰...";
-        document.getElementById('hcy-grid').innerHTML = "";
-        document.getElementById('fz-grid').innerHTML = "";
+        if(!ID || !SECRET) { status.innerText = "請輸入金鑰"; return; }
+        
+        status.innerText = "⏳ 嘗試建立安全連線...";
+        grid.innerHTML = "";
 
         try {
-            // 1. 取得 Token
-            const authUrl = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
-            const authResponse = await fetch(PROXY + encodeURIComponent(authUrl), {
+            // 1. 取得 Token (直接向 TDX 請求，不透過 Proxy)
+            const authRes = await fetch("https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token", {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                headers: { 'content-type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({
                     grant_type: 'client_credentials',
-                    client_id: cid,
-                    client_secret: csec
+                    client_id: ID,
+                    client_secret: SECRET
                 })
             });
 
-            if (!authResponse.ok) throw new Error("Token 驗證失敗，請檢查金鑰。");
-            const authData = await authResponse.json();
+            if (!authRes.ok) throw new Error("金鑰錯誤或被拒絕 (401/403)");
+            const authData = await authRes.json();
             const token = authData.access_token;
 
-            statusEl.innerText = "✅ 驗證成功，正在讀取資料...";
+            status.innerText = "✅ 驗證成功，正在下載公路資料...";
 
-            // 2. 抓取 API (分開抓，避免一筆失敗全部失敗)
-            const apiUrls = [
-                "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON",
-                "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/Province?$format=JSON"
-            ];
+            // 2. 取得國道資料 (國道資料最穩定)
+            const apiRes = await fetch("https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON", {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await apiRes.json();
+            const list = data.value || data;
 
-            let allCCTVs = [];
+            // 3. 過濾並渲染 (鎖定後村堰與浮洲中間的台65與國3)
+            const targetHCY = { lat: 24.9655, lon: 121.3739 };
+            const targetFZ = { lat: 25.002, lon: 121.445 };
 
-            for (const url of apiUrls) {
-                try {
-                    const res = await fetch(PROXY + encodeURIComponent(url), {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    const json = await res.json();
-                    
-                    // 自動解構：嘗試找出真正的陣列在哪裡
-                    const list = Array.isArray(json) ? json : (json.value || json.data || []);
-                    allCCTVs = allCCTVs.concat(list);
-                    console.log(`成功載入資料，目前累計: ${allCCTVs.length} 筆`);
-                } catch (e) {
-                    console.warn("部分 API 載入失敗: " + url);
-                }
-            }
+            const filtered = list.filter(item => {
+                const nearHCY = Math.abs(item.PositionLat - targetHCY.lat) < 0.05 && Math.abs(item.PositionLon - targetHCY.lon) < 0.05;
+                const nearFZ = Math.abs(item.PositionLat - targetFZ.lat) < 0.05 && Math.abs(item.PositionLon - targetFZ.lon) < 0.05;
+                return nearHCY || nearFZ;
+            });
 
-            statusEl.innerText = "🚀 載入完成，正在過濾地點...";
+            if(filtered.length === 0) { status.innerText = "⚠️ 範圍內無可用公路影像"; return; }
 
-            // 3. 渲染
-            render(allCCTVs, 'hcy-grid', { lat: 24.9655, lon: 121.3739 }, 0.045);
-            render(allCCTVs, 'fz-grid', { lat: 25.002, lon: 121.445 }, 0.035);
-            
-            statusEl.innerText = "完成！";
+            filtered.forEach(item => {
+                const imgUrl = item.VideoStreamURL.replace("http://", "https://");
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `<img src="${imgUrl}" onerror="this.src='https://placehold.co/300x210?text=影像離線';"><p>${item.CCTVName}</p>`;
+                grid.appendChild(card);
+            });
 
-        } catch (err) {
-            console.error(err);
-            statusEl.innerText = "❌ 發生錯誤: " + err.message;
+            status.innerText = "觀測中";
+
+        } catch (e) {
+            status.innerText = "❌ 連線失敗: " + e.message + "。請嘗試換個瀏覽器或關閉廣告攔截器。";
         }
-    }
-
-    function render(data, gridId, target, range) {
-        const grid = document.getElementById(gridId);
-        const filtered = data.filter(item => 
-            item.PositionLat && item.PositionLon &&
-            Math.abs(item.PositionLat - target.lat) < range && 
-            Math.abs(item.PositionLon - target.lon) < range
-        );
-
-        if (filtered.length === 0) {
-            grid.innerHTML = "<p style='color:#666'>此區域範圍內暫無公路影像</p>";
-            return;
-        }
-
-        filtered.forEach(item => {
-            const secureUrl = item.VideoStreamURL.replace("http://", "https://");
-            const card = document.createElement('div');
-            card.className = 'card';
-            card.innerHTML = `
-                <img src="${secureUrl}" onerror="this.src='https://placehold.co/300x225?text=影像維護中';">
-                <div class="card-info">
-                    <b>${item.CCTVName}</b>
-                </div>
-            `;
-            grid.appendChild(card);
-        });
     }
 </script>
 </body>
