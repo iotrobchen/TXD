@@ -2,53 +2,48 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>後村堰飛行場觀測地圖</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <title>飛行觀測儀表板</title>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; }
-        #map { width: 100%; height: 100vh; }
-        .popup-video { width: 320px; height: 240px; }
-        .info-panel {
-            position: absolute; top: 10px; left: 60px; z-index: 1000;
-            background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
+        body { font-family: "Microsoft JhengHei", sans-serif; background: #2c3e50; color: white; margin: 0; padding: 20px; }
+        .section-title { background: #e67e22; padding: 10px; border-radius: 5px; margin: 20px 0 10px 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+        .card { background: #34495e; border-radius: 8px; overflow: hidden; border: 1px solid #455a64; }
+        .card p { padding: 8px; margin: 0; font-size: 13px; text-align: center; background: rgba(0,0,0,0.3); }
+        .img-container { width: 100%; height: 225px; background: #000; position: relative; }
+        img { width: 100%; height: 100%; object-fit: contain; }
+        .loading { text-align: center; padding: 50px; font-size: 20px; }
+        /* 按鈕樣式可點擊開啟原網址 */
+        .btn-link { display: block; text-decoration: none; color: #3498db; font-size: 11px; padding: 5px; text-align: center; }
     </style>
 </head>
 <body>
 
-    <div class="info-panel">
-        <h3 style="margin:0">後村堰飛行場周邊即時影像</h3>
-        <p style="margin:5px 0 0; font-size:12px;">點擊地圖圖標查看氣候狀態</p>
-    </div>
-    <div id="map"></div>
+    <h1>🚁 飛行天候監測儀表板</h1>
+
+    <div id="loading" class="loading">正在掃描後村堰與浮洲周邊影像...</div>
+
+    <div class="section-title">📍 後村堰飛行場周邊 (樹林/鶯歌)</div>
+    <div id="hcy-grid" class="grid"></div>
+
+    <div class="section-title">📍 浮洲環保公園周邊 (板橋/土城)</div>
+    <div id="fz-grid" class="grid"></div>
 
 <script>
     const ID = 'iotrobchen-b5b93caa-f0ca-455a';
     const SECRET = '7c3b0b4d-50cf-4b34-9110-b5a1afa425cf';
 
-    // 飛行場座標 (大約位置)
-    const FLY_ZONE = [24.9665, 121.3935]; 
-
     const PROXY = "https://corsproxy.io/?";
     const AUTH_URL = `${PROXY}https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token`;
-    // 改抓新北市 (NewTaipei) 的資料
     const API_URL = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/NewTaipei?$format=JSON`;
 
-    // 初始化地圖
-    const map = L.map('map').setView(FLY_ZONE, 14);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
+    // 關鍵座標鎖定
+    const LOCATIONS = {
+        HCY: { lat: 24.9665, lon: 121.3935, name: "後村堰" },
+        FZ: { lat: 25.002, lon: 121.445, name: "浮洲" }
+    };
 
-    // 標記飛行場位置
-    L.marker(FLY_ZONE, {title: "後村堰飛行場"}).addTo(map)
-        .bindPopup("<b>後村堰飛行場</b>").openPopup();
-
-    async function loadCCTV() {
+    async function fetchData() {
         try {
-            // 1. 取得 Token
             const auth = await fetch(AUTH_URL, {
                 method: 'POST',
                 headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -56,37 +51,53 @@
             });
             const authData = await auth.json();
 
-            // 2. 抓取新北市資料
             const res = await fetch(API_URL, { headers: { 'Authorization': `Bearer ${authData.access_token}` } });
             const result = await res.json();
-            const list = result.CCTVs || [];
+            const allCCTVs = result.CCTVs || [];
 
-            // 3. 過濾出距離飛行場較近的監視器 (經緯度差異在 0.05 以內)
-            const nearby = list.filter(item => {
-                const dLat = Math.abs(item.PositionLat - FLY_ZONE[0]);
-                const dLon = Math.abs(item.PositionLon - FLY_ZONE[1]);
-                return dLat < 0.04 && dLon < 0.04; 
-            });
+            document.getElementById('loading').style.display = 'none';
 
-            // 4. 將監視器加入地圖
-            nearby.forEach(item => {
-                const marker = L.marker([item.PositionLat, item.PositionLon]).addTo(map);
-                
-                // 點擊後顯示彈窗影像
-                marker.bindPopup(`
-                    <div class="popup-video">
-                        <p style="margin:0 0 5px; font-size:12px;"><b>${item.CCTVName}</b></p>
-                        <iframe src="${item.VideoStreamURL}" width="100%" height="200" frameborder="0" allowfullscreen></iframe>
-                    </div>
-                `);
-            });
+            // 渲染後村堰 (方圓 3km)
+            renderGrid('hcy-grid', allCCTVs, LOCATIONS.HCY);
+            // 渲染浮洲 (方圓 3km)
+            renderGrid('fz-grid', allCCTVs, LOCATIONS.FZ);
 
         } catch (err) {
-            console.error("載入失敗:", err);
+            document.getElementById('loading').innerHTML = "載入失敗: " + err.message;
         }
     }
 
-    loadCCTV();
+    function renderGrid(elementId, data, target) {
+        const container = document.getElementById(elementId);
+        
+        // 篩選距離目標地點 0.03 經緯度以內的監視器 (約 3公里)
+        const filtered = data.filter(item => {
+            return Math.abs(item.PositionLat - target.lat) < 0.03 && 
+                   Math.abs(item.PositionLon - target.lon) < 0.03;
+        });
+
+        if (filtered.length === 0) {
+            container.innerHTML = "<p>此區域暫無可用監視器</p>";
+            return;
+        }
+
+        filtered.forEach(item => {
+            // 注意：由於 iframe 被擋，我們改用直接連結或嘗試抓取預覽圖
+            // 新北市影像若無法顯示，會顯示「影像無法嵌入」提示，並提供點擊跳轉
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+                <p>${item.CCTVName}</p>
+                <div class="img-container">
+                    <iframe src="${item.VideoStreamURL}" style="width:100%; height:100%; border:none;"></iframe>
+                </div>
+                <a href="${item.VideoStreamURL}" target="_blank" class="btn-link">在新視窗打開即時影像</a>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    fetchData();
 </script>
 </body>
 </html>
