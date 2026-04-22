@@ -2,22 +2,31 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>飛行觀測站 (公路局版)</title>
+    <title>飛行觀測最終修復版</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: #eee; padding: 15px; }
-        .section-tag { background: #01579b; padding: 8px; border-radius: 4px; margin: 20px 0 10px; font-weight: bold; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
-        .card { background: #1e1e1e; border-radius: 8px; overflow: hidden; border: 1px solid #333; }
-        .card p { padding: 10px; margin: 0; font-size: 13px; background: #263238; }
-        img { width: 100%; height: 210px; background: #000; display: block; object-fit: contain; }
-        .loading { text-align: center; margin-top: 50px; color: #888; }
+        body { font-family: sans-serif; background: #1a1a1a; color: #eee; padding: 20px; text-align: center; }
+        .input-group { background: #333; padding: 20px; border-radius: 10px; margin-bottom: 20px; display: inline-block; }
+        input { padding: 8px; width: 250px; margin: 5px; border-radius: 4px; border: none; }
+        button { padding: 8px 20px; background: #00d4ff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .section-tag { background: #01579b; padding: 8px; border-radius: 4px; margin: 20px 0; text-align: left; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+        .card { background: #263238; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
+        img { width: 100%; height: 225px; background: #000; object-fit: contain; }
+        p { margin: 0; padding: 10px; font-size: 13px; text-align: left; }
     </style>
 </head>
 <body>
 
-    <h2 style="text-align:center; color:#4fc3f7;">🚁 飛行區周邊公路觀測</h2>
-    <div id="loading" class="loading">正在連線至公路局監視器...</div>
+    <h1>🚁 飛行區周邊公路即時影像</h1>
+
+    <div class="input-group">
+        <input type="text" id="cid" placeholder="iotrobchen-b5b93caa-f0ca-455a">
+        <input type="password" id="csec" placeholder="7c3b0b4d-50cf-4b34-9110-b5a1afa425cf">
+        <button onclick="start()">開始觀測</button>
+        <p style="font-size:11px; color:#888; text-align:center;">輸入完按「開始觀測」，若失敗請檢查 TDX 後台 Key 是否重設</p>
+    </div>
+
+    <div id="status"></div>
 
     <div class="section-tag">📍 後村堰周邊 (國道3號/台65)</div>
     <div id="hcy-grid" class="grid"></div>
@@ -26,71 +35,76 @@
     <div id="fz-grid" class="grid"></div>
 
 <script>
-    const ID = 'iotrobchen-b5b93caa-f0ca-455a';
-    const SECRET = '7c3b0b4d-50cf-4b34-9110-b5a1afa425cf';
-
-    const PROXY = "https://corsproxy.io/?";
-    const AUTH_URL = `${PROXY}https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token`;
-    
-    // 這次改抓 國道 (InterCity) 與 省道 (Province) 的 API
-    const API_INTER = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON`;
-    const API_PROV = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/Province?$format=JSON`;
-
-    const LOCS = {
-        HCY: { lat: 24.9655, lon: 121.3739 }, // 後村堰
-        FZ: { lat: 25.002, lon: 121.445 }    // 浮洲
-    };
-
     async function start() {
+        // 優先讀取輸入框，若空白則讀取程式預設值
+        const ID = document.getElementById('cid').value || '你的CLIENT_ID';
+        const SECRET = document.getElementById('csec').value || '你的CLIENT_SECRET';
+        const status = document.getElementById('status');
+
+        // 清空舊畫面
+        document.getElementById('hcy-grid').innerHTML = '';
+        document.getElementById('fz-grid').innerHTML = '';
+        status.innerHTML = "正在驗證金鑰...";
+
         try {
-            const auth = await fetch(AUTH_URL, {
+            // 1. 直接呼叫 TDX (不用 Proxy)
+            const authRes = await fetch("https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token", {
                 method: 'POST',
                 headers: { 'content-type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ grant_type: 'client_credentials', client_id: ID, client_secret: SECRET })
+                body: new URLSearchParams({
+                    grant_type: 'client_credentials',
+                    client_id: ID,
+                    client_secret: SECRET
+                })
             });
-            const { access_token } = await auth.json();
 
-            // 同時抓國道與省道資料
-            const [res1, res2] = await Promise.all([
-                fetch(API_INTER, { headers: { 'Authorization': `Bearer ${access_token}` } }),
-                fetch(API_PROV, { headers: { 'Authorization': `Bearer ${access_token}` } })
-            ]);
-            
-            const data1 = await res1.json();
-            const data2 = await res2.json();
-            const all = [...(data1.value || data1), ...(data2.value || data2)];
+            if (!authRes.ok) throw new Error("驗證失敗！請確認 ID 與 Secret 是否正確。");
+            const { access_token } = await authRes.json();
+            status.innerHTML = "驗證成功，正在讀取公路影像...";
 
-            document.getElementById('loading').style.display = 'none';
+            // 2. 抓取國道 & 省道 (一樣不用 Proxy，直接呼叫)
+            const urls = [
+                "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON",
+                "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/Province?$format=JSON"
+            ];
 
-            // 渲染：範圍放大到 5km (0.04度) 確保能抓到公路影像
-            render(all, 'hcy-grid', LOCS.HCY);
-            render(all, 'fz-grid', LOCS.FZ);
+            const responses = await Promise.all(urls.map(url => 
+                fetch(url, { headers: { 'Authorization': `Bearer ${access_token}` } }).then(r => r.json())
+            ));
+
+            const allData = [...(responses[0].value || responses[0]), ...(responses[1].value || responses[1])];
+            status.innerHTML = "";
+
+            // 3. 渲染
+            render(allData, 'hcy-grid', { lat: 24.9655, lon: 121.3739 });
+            render(allData, 'fz-grid', { lat: 25.002, lon: 121.445 });
 
         } catch (e) {
-            document.getElementById('loading').innerText = "失敗，請重設 Secret 再試一次。";
+            status.innerHTML = `<b style="color:#ff5252;">${e.message}</b>`;
         }
     }
 
-    function render(data, gridId, coord) {
+    function render(data, gridId, target) {
         const grid = document.getElementById(gridId);
-        const filtered = data.filter(item => {
-            return Math.abs(item.PositionLat - coord.lat) < 0.04 && 
-                   Math.abs(item.PositionLon - coord.lon) < 0.04;
-        });
+        // 篩選半徑約 4-5 公里 (0.04度)
+        const filtered = data.filter(item => 
+            Math.abs(item.PositionLat - target.lat) < 0.04 && 
+            Math.abs(item.PositionLon - target.lon) < 0.04
+        );
+
+        if(filtered.length === 0) grid.innerHTML = "<p>範圍內無公路影像</p>";
 
         filtered.forEach(item => {
-            let url = item.VideoStreamURL.replace("http://", "https://");
+            const url = item.VideoStreamURL.replace("http://", "https://");
             const card = document.createElement('div');
             card.className = 'card';
             card.innerHTML = `
+                <img src="${url}" onerror="this.src='https://placehold.co/300x225?text=影像離線或維護中'">
                 <p>${item.CCTVName}</p>
-                <img src="${url}" onerror="this.src='https://placehold.co/300x200?text=影像載入中...'">
             `;
             grid.appendChild(card);
         });
     }
-
-    start();
 </script>
 </body>
 </html>
