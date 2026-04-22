@@ -2,32 +2,33 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>飛行觀測終極修復</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飛行觀測儀表板</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: #eee; padding: 20px; text-align: center; }
-        .input-box { background: #222; padding: 20px; border-radius: 12px; margin: 10px; display: inline-block; border: 1px solid #444; }
-        input { padding: 10px; width: 220px; margin: 5px; border-radius: 5px; border: none; background: #000; color: #fff; }
-        button { padding: 10px 25px; background: #4caf50; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; max-width: 1200px; margin: 20px auto; }
-        .card { background: #1e1e1e; border-radius: 8px; overflow: hidden; border: 1px solid #333; }
-        img { width: 100%; height: 210px; background: #000; object-fit: contain; }
-        p { padding: 10px; margin: 0; font-size: 13px; text-align: left; background: #333; min-height: 40px; }
-        #status { color: #ffeb3b; margin: 10px; font-weight: bold; }
+        body { font-family: sans-serif; background: #121212; color: #eee; text-align: center; padding: 20px; margin: 0; }
+        .input-box { background: #222; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: inline-block; border: 1px solid #333; }
+        input { padding: 10px; width: 220px; margin: 5px; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; }
+        button { padding: 10px 25px; background: #2e7d32; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
+        #status { margin: 15px; color: #ffeb3b; font-weight: bold; min-height: 24px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; max-width: 1200px; margin: 0 auto; }
+        .card { background: #1e1e1e; border-radius: 10px; overflow: hidden; border: 1px solid #333; transition: 0.3s; }
+        .card:hover { border-color: #4caf50; }
+        img { width: 100%; height: 225px; background: #000; display: block; object-fit: contain; }
+        .card-info { padding: 12px; font-size: 13px; text-align: left; background: #263238; border-top: 1px solid #333; }
     </style>
 </head>
 <body>
 
-    <h1>🚁 飛行區公路影像觀測</h1>
+    <h1>🚁 飛行區公路即時影像</h1>
 
     <div class="input-box">
         <input type="text" id="cid" placeholder="Client ID" value="iotrobchen-b5b93caa-f0ca-455a">
-        <input type="password" id="csec" placeholder="Client Secret">
+        <input type="password" id="csec" placeholder="請貼上 Client Secret">
         <button onclick="start()">啟動連線</button>
     </div>
 
-    <div id="status">請輸入 Secret 後按下啟動</div>
+    <div id="status">準備就緒</div>
 
-    <div style="text-align:left; max-width:1200px; margin: 0 auto; color:#4caf50; font-weight:bold; border-bottom: 2px solid #4caf50; padding-bottom: 5px;">📍 觀測點清單 (後村堰/浮洲)</div>
     <div id="display-grid" class="grid"></div>
 
 <script>
@@ -38,13 +39,16 @@
         const grid = document.getElementById('display-grid');
 
         if(!SECRET) { status.innerText = "❌ 請輸入 Secret"; return; }
-        
-        status.innerText = "⏳ 正在驗證並抓取資料...";
+        status.innerText = "⏳ 正在處理中，請稍候...";
         grid.innerHTML = "";
+
+        // 使用 AllOrigins 代理處理 CORS 問題
+        const proxy = "https://api.allorigins.win/raw?url=";
 
         try {
             // 1. 取得 Token
-            const authRes = await fetch("https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token", {
+            const authUrl = encodeURIComponent("https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token");
+            const authRes = await fetch(proxy + authUrl, {
                 method: 'POST',
                 headers: { 'content-type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({
@@ -54,65 +58,50 @@
                 })
             });
 
-            if (!authRes.ok) throw new Error("Token 驗證失敗 (401/403)");
             const authData = await authRes.json();
-            const token = authData.access_token;
-
-            // 2. 取得國道 CCTV 資料
-            // 修正：確保 URL 參數正確
-            const apiRes = await fetch("https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON", {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            if (!authData.access_token) throw new Error("無法取得授權碼，請檢查 Secret");
             
-            const rawData = await apiRes.json();
-            console.log("原始回傳資料:", rawData);
+            status.innerText = "✅ 驗證成功，獲取公路影像中...";
 
-            // 核心修正：強制轉換為陣列
+            // 2. 獲取 CCTV 資料
+            const apiUrl = encodeURIComponent("https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON");
+            const apiRes = await fetch(proxy + apiUrl, {
+                headers: { 'Authorization': `Bearer ${authData.access_token}` }
+            });
+
+            const rawData = await apiRes.json();
+            
+            // --- 超強健資料解析 ---
             let list = [];
             if (Array.isArray(rawData)) {
                 list = rawData;
-            } else if (rawData && typeof rawData === 'object' && Array.isArray(rawData.value)) {
+            } else if (rawData.value && Array.isArray(rawData.value)) {
                 list = rawData.value;
-            } else {
-                console.error("資料結構異常:", rawData);
-                throw new Error("API 回傳格式不正確，請查看 Console");
+            } else if (typeof rawData === 'string') {
+                // 有時代理會回傳字串化的 JSON
+                const parsed = JSON.parse(rawData);
+                list = parsed.value || parsed;
             }
 
-            // 3. 過濾座標 (半徑約 6km)
-            const targetHCY = { lat: 24.9655, lon: 121.3739 };
-            const targetFZ = { lat: 25.002, lon: 121.445 };
+            if (!Array.isArray(list)) throw new Error("資料解析失敗，請重新整理");
 
+            // 3. 過濾座標 (中心點: 後村堰 24.965, 121.373)
             const filtered = list.filter(item => {
-                if (!item.PositionLat || !item.PositionLon) return false;
-                const nearHCY = Math.abs(item.PositionLat - targetHCY.lat) < 0.06 && Math.abs(item.PositionLon - targetHCY.lon) < 0.06;
-                const nearFZ = Math.abs(item.PositionLat - targetFZ.lat) < 0.06 && Math.abs(item.PositionLon - targetFZ.lon) < 0.06;
-                return nearHCY || nearFZ;
+                const lat = item.PositionLat;
+                const lon = item.PositionLon;
+                // 擴大搜索範圍至 8 公里 (約 0.07 度) 確保能看到國道影像
+                return Math.abs(lat - 24.9655) < 0.07 && Math.abs(lon - 121.3739) < 0.07;
             });
 
-            if(filtered.length === 0) { 
-                status.innerText = "⚠️ 範圍內無可用公路影像"; 
-                return; 
+            if(filtered.length === 0) {
+                status.innerText = "⚠️ 附近 8 公里內無公路影像";
+                return;
             }
 
-            // 4. 渲染
+            // 4. 渲染畫面
             filtered.forEach(item => {
                 const imgUrl = item.VideoStreamURL.replace("http://", "https://");
                 const card = document.createElement('div');
                 card.className = 'card';
                 card.innerHTML = `
-                    <img src="${imgUrl}" onerror="this.onerror=null; this.src='https://placehold.co/300x210?text=影像載入中...';">
-                    <p>${item.CCTVName}</p>
-                `;
-                grid.appendChild(card);
-            });
-
-            status.innerText = "✅ 觀測中 - 成功找到 " + filtered.length + " 個觀測點";
-
-        } catch (e) {
-            console.error(e);
-            status.innerHTML = `<span style="color:#f44336;">❌ 錯誤: ${e.message}</span>`;
-        }
-    }
-</script>
-</body>
-</html>
+                    <img src="${imgUrl}" onerror="this.src='
