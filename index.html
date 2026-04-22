@@ -3,42 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>飛行員氣象觀測站</title>
+    <title>飛行觀測站 (公路局版)</title>
     <style>
-        body { font-family: -apple-system, sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 15px; }
-        header { text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
-        h1 { font-size: 1.4rem; color: #4fc3f7; margin: 0; }
-        .section-tag { 
-            background: #263238; color: #81d4fa; padding: 8px 12px; 
-            border-radius: 4px; font-weight: bold; margin: 25px 0 10px; 
-            display: inline-block; font-size: 0.9rem;
-        }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 12px; }
-        .obs-card { 
-            background: #1e1e1e; border: 1px solid #333; border-radius: 10px; 
-            padding: 18px 10px; text-decoration: none; color: #fff;
-            text-align: center; display: flex; flex-direction: column;
-            align-items: center; transition: all 0.2s ease;
-        }
-        .obs-card:active { background: #01579b; transform: scale(0.95); }
-        .obs-card b { font-size: 0.95rem; display: block; margin-bottom: 5px; color: #fff; }
-        .obs-card span { font-size: 0.75rem; color: #999; }
-        .icon { font-size: 20px; margin-bottom: 8px; }
-        .loading { text-align: center; margin-top: 40px; color: #666; font-style: italic; }
+        body { font-family: sans-serif; background: #121212; color: #eee; padding: 15px; }
+        .section-tag { background: #01579b; padding: 8px; border-radius: 4px; margin: 20px 0 10px; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
+        .card { background: #1e1e1e; border-radius: 8px; overflow: hidden; border: 1px solid #333; }
+        .card p { padding: 10px; margin: 0; font-size: 13px; background: #263238; }
+        img { width: 100%; height: 210px; background: #000; display: block; object-fit: contain; }
+        .loading { text-align: center; margin-top: 50px; color: #888; }
     </style>
 </head>
 <body>
 
-    <header>
-        <h1>🚁 後村堰 & 浮洲飛行觀測</h1>
-    </header>
+    <h2 style="text-align:center; color:#4fc3f7;">🚁 飛行區周邊公路觀測</h2>
+    <div id="loading" class="loading">正在連線至公路局監視器...</div>
 
-    <div id="loading" class="loading">正在掃描周邊氣象觀測點...</div>
-
-    <div class="section-tag">📡 後村堰飛行場周邊 (精確定位)</div>
+    <div class="section-tag">📍 後村堰周邊 (國道3號/台65)</div>
     <div id="hcy-grid" class="grid"></div>
 
-    <div class="section-tag">📡 浮洲環保公園周邊</div>
+    <div class="section-tag">📍 浮洲周邊 (台65/省道)</div>
     <div id="fz-grid" class="grid"></div>
 
 <script>
@@ -47,15 +31,17 @@
 
     const PROXY = "https://corsproxy.io/?";
     const AUTH_URL = `${PROXY}https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token`;
-    const API_URL = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/NewTaipei?$format=JSON`;
+    
+    // 這次改抓 國道 (InterCity) 與 省道 (Province) 的 API
+    const API_INTER = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON`;
+    const API_PROV = `${PROXY}https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/Province?$format=JSON`;
 
-    // 根據您提供的精確中心點與浮洲座標
-    const TARGETS = {
-        HCY: { lat: 24.9655, lon: 121.3739 }, // 後村堰中心點
-        FZ: { lat: 25.002, lon: 121.445 }    // 浮洲環保公園
+    const LOCS = {
+        HCY: { lat: 24.9655, lon: 121.3739 }, // 後村堰
+        FZ: { lat: 25.002, lon: 121.445 }    // 浮洲
     };
 
-    async function run() {
+    async function start() {
         try {
             const auth = await fetch(AUTH_URL, {
                 method: 'POST',
@@ -64,52 +50,47 @@
             });
             const { access_token } = await auth.json();
 
-            const res = await fetch(API_URL, { headers: { 'Authorization': `Bearer ${access_token}` } });
-            const result = await res.json();
-            const cctvs = result.CCTVs || [];
+            // 同時抓國道與省道資料
+            const [res1, res2] = await Promise.all([
+                fetch(API_INTER, { headers: { 'Authorization': `Bearer ${access_token}` } }),
+                fetch(API_PROV, { headers: { 'Authorization': `Bearer ${access_token}` } })
+            ]);
+            
+            const data1 = await res1.json();
+            const data2 = await res2.json();
+            const all = [...(data1.value || data1), ...(data2.value || data2)];
 
             document.getElementById('loading').style.display = 'none';
 
-            // 執行渲染：距離中心點 0.018 度以內 (約 2 公里)
-            fillGrid(cctvs, 'hcy-grid', TARGETS.HCY);
-            fillGrid(cctvs, 'fz-grid', TARGETS.FZ);
+            // 渲染：範圍放大到 5km (0.04度) 確保能抓到公路影像
+            render(all, 'hcy-grid', LOCS.HCY);
+            render(all, 'fz-grid', LOCS.FZ);
 
         } catch (e) {
-            document.getElementById('loading').innerHTML = "連線失敗，請確認 API 金鑰是否正確。";
+            document.getElementById('loading').innerText = "失敗，請重設 Secret 再試一次。";
         }
     }
 
-    function fillGrid(data, gridId, coord) {
+    function render(data, gridId, coord) {
         const grid = document.getElementById(gridId);
         const filtered = data.filter(item => {
-            return Math.abs(item.PositionLat - coord.lat) < 0.018 && 
-                   Math.abs(item.PositionLon - coord.lon) < 0.018;
+            return Math.abs(item.PositionLat - coord.lat) < 0.04 && 
+                   Math.abs(item.PositionLon - coord.lon) < 0.04;
         });
 
-        if (filtered.length === 0) {
-            grid.innerHTML = "<div style='color:#666; font-size:12px; padding:10px;'>此範圍內無監視器</div>";
-            return;
-        }
-
         filtered.forEach(item => {
-            const card = document.createElement('a');
-            card.className = 'obs-card';
-            card.href = item.VideoStreamURL;
-            card.target = "_blank";
-            
-            // 名稱優化
-            const name = item.CCTVName.replace("新北市", "").replace("監視器", "").substring(0, 12);
-            
+            let url = item.VideoStreamURL.replace("http://", "https://");
+            const card = document.createElement('div');
+            card.className = 'card';
             card.innerHTML = `
-                <div class="icon">☁️</div>
-                <b>${name}</b>
-                <span>點擊開啟觀測</span>
+                <p>${item.CCTVName}</p>
+                <img src="${url}" onerror="this.src='https://placehold.co/300x200?text=影像載入中...'">
             `;
             grid.appendChild(card);
         });
     }
 
-    run();
+    start();
 </script>
 </body>
 </html>
