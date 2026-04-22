@@ -9,14 +9,12 @@
         .input-box { background: #222; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: inline-block; border: 1px solid #333; }
         input { padding: 10px; width: 220px; margin: 5px; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; }
         button { padding: 10px 25px; background: #00bcd4; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: #000; }
-        button:hover { background: #00acc1; }
-        .status { margin: 15px; font-weight: bold; min-height: 24px; }
+        .status { margin: 15px; font-weight: bold; min-height: 24px; color: #ffeb3b; }
         .tag { background: #004d40; color: #4db6ac; padding: 8px 15px; border-radius: 5px; text-align: left; margin: 30px auto 10px; max-width: 1200px; font-weight: bold; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; max-width: 1200px; margin: 0 auto; }
-        .card { background: #1e1e1e; border-radius: 10px; overflow: hidden; border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .card { background: #1e1e1e; border-radius: 10px; overflow: hidden; border: 1px solid #333; }
         img { width: 100%; height: 225px; background: #000; display: block; object-fit: contain; }
-        .card-info { padding: 10px; font-size: 13px; text-align: left; background: #263238; border-top: 1px solid #333; }
-        .error-msg { color: #ff5252; }
+        .card-info { padding: 10px; font-size: 13px; text-align: left; background: #263238; }
     </style>
 </head>
 <body>
@@ -24,15 +22,12 @@
     <h1>🚁 飛行區周邊公路觀測</h1>
 
     <div class="input-box">
-        <input type="text" id="cid" placeholder="請輸入 Client ID">
-        <input type="password" id="csec" placeholder="請輸入 Client Secret">
+        <input type="text" id="cid" placeholder="Client ID">
+        <input type="password" id="csec" placeholder="Client Secret">
         <button onclick="start()">開始觀測</button>
-        <div style="font-size: 11px; color: #888; margin-top: 10px;">
-            提示：若持續 Failed to fetch，請確認您已在 TDX 重設金鑰。
-        </div>
     </div>
 
-    <div id="status" class="status"></div>
+    <div id="status" class="status">請輸入金鑰後點擊開始</div>
 
     <div class="tag">📍 後村堰周邊 (國道3號/台65/台3)</div>
     <div id="hcy-grid" class="grid"></div>
@@ -41,7 +36,7 @@
     <div id="fz-grid" class="grid"></div>
 
 <script>
-    // 使用另一個更穩定的 Proxy 代理
+    // 使用 allorigins 代理並加上隨機參數防止快取
     const PROXY = "https://api.allorigins.win/raw?url=";
 
     async function start() {
@@ -50,18 +45,18 @@
         const statusEl = document.getElementById('status');
 
         if (!cid || !csec) {
-            statusEl.innerHTML = '<span class="error-msg">請輸入完整的 ID 與 Secret！</span>';
+            statusEl.innerText = "❌ 請輸入 ID 與 Secret";
             return;
         }
 
-        statusEl.innerHTML = "正在連線驗證伺服器...";
+        statusEl.innerText = "⏳ 正在驗證金鑰...";
         document.getElementById('hcy-grid').innerHTML = "";
         document.getElementById('fz-grid').innerHTML = "";
 
         try {
-            // 1. 取得 Token (使用 Proxy 避免 Failed to fetch)
-            const tokenUrl = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
-            const authResponse = await fetch(PROXY + encodeURIComponent(tokenUrl), {
+            // 1. 取得 Token
+            const authUrl = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
+            const authResponse = await fetch(PROXY + encodeURIComponent(authUrl), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({
@@ -71,59 +66,71 @@
                 })
             });
 
-            if (!authResponse.ok) throw new Error("驗證失敗，請檢查金鑰或稍後再試。");
+            if (!authResponse.ok) throw new Error("Token 驗證失敗，請檢查金鑰。");
             const authData = await authResponse.json();
             const token = authData.access_token;
 
-            statusEl.innerHTML = "驗證成功，正在下載公路局資料...";
+            statusEl.innerText = "✅ 驗證成功，正在讀取資料...";
 
-            // 2. 取得國道與省道資料
+            // 2. 抓取 API (分開抓，避免一筆失敗全部失敗)
             const apiUrls = [
                 "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/InterCity?$format=JSON",
                 "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/Province?$format=JSON"
             ];
 
-            const [resInter, resProv] = await Promise.all(apiUrls.map(url => 
-                fetch(PROXY + encodeURIComponent(url), {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }).then(r => r.json())
-            ));
+            let allCCTVs = [];
 
-            const allCCTVs = [...(resInter.value || resInter), ...(resProv.value || resProv)];
-            statusEl.innerHTML = "載入完成！";
+            for (const url of apiUrls) {
+                try {
+                    const res = await fetch(PROXY + encodeURIComponent(url), {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const json = await res.json();
+                    
+                    // 自動解構：嘗試找出真正的陣列在哪裡
+                    const list = Array.isArray(json) ? json : (json.value || json.data || []);
+                    allCCTVs = allCCTVs.concat(list);
+                    console.log(`成功載入資料，目前累計: ${allCCTVs.length} 筆`);
+                } catch (e) {
+                    console.warn("部分 API 載入失敗: " + url);
+                }
+            }
 
-            // 3. 渲染 (範圍加大確保能看到畫面)
+            statusEl.innerText = "🚀 載入完成，正在過濾地點...";
+
+            // 3. 渲染
             render(allCCTVs, 'hcy-grid', { lat: 24.9655, lon: 121.3739 }, 0.045);
             render(allCCTVs, 'fz-grid', { lat: 25.002, lon: 121.445 }, 0.035);
+            
+            statusEl.innerText = "完成！";
 
         } catch (err) {
             console.error(err);
-            statusEl.innerHTML = `<span class="error-msg">連線失敗：${err.message}</span>`;
+            statusEl.innerText = "❌ 發生錯誤: " + err.message;
         }
     }
 
     function render(data, gridId, target, range) {
         const grid = document.getElementById(gridId);
         const filtered = data.filter(item => 
+            item.PositionLat && item.PositionLon &&
             Math.abs(item.PositionLat - target.lat) < range && 
             Math.abs(item.PositionLon - target.lon) < range
         );
 
         if (filtered.length === 0) {
-            grid.innerHTML = "<p style='color:#666'>範圍內暫無公路影像</p>";
+            grid.innerHTML = "<p style='color:#666'>此區域範圍內暫無公路影像</p>";
             return;
         }
 
         filtered.forEach(item => {
-            // 轉換 https 避免 Mixed Content 錯誤
             const secureUrl = item.VideoStreamURL.replace("http://", "https://");
             const card = document.createElement('div');
             card.className = 'card';
             card.innerHTML = `
-                <img src="${secureUrl}" onerror="this.src='https://placehold.co/300x225?text=影像離線或不支援嵌入'">
+                <img src="${secureUrl}" onerror="this.src='https://placehold.co/300x225?text=影像維護中';">
                 <div class="card-info">
-                    <b>${item.CCTVName}</b><br>
-                    <span style="font-size:10px; color:#888;">${item.CCTVID}</span>
+                    <b>${item.CCTVName}</b>
                 </div>
             `;
             grid.appendChild(card);
