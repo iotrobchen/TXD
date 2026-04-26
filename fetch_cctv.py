@@ -13,7 +13,9 @@ auth_res = requests.post(auth_url, data=auth_data)
 token = auth_res.json().get('access_token')
 
 # 2. 呼叫 API 抓取鳶山堰影像 (透過名稱過濾)
-api_url = "https://tdx.transportdata.tw/api/basic/v2/Resources/CCTV?$filter=contains(CCTVName,'鳶山堰')&$format=JSON"
+# api_url = "https://tdx.transportdata.tw/api/basic/v2/Resources/CCTV?$filter=contains(CCTVName,'鳶山堰')&$format=JSON"
+api_url = "https://tdx.transportdata.tw/api/basic/v2/Resources/CCTV?$filter=AuthorityCode eq 'WRA'&$format=JSON"
+
 headers = {'Authorization': f'Bearer {token}'}
 api_res = requests.get(api_url, headers=headers)
 
