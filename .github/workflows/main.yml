@@ -20,5 +20,10 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add data.json
-          git commit -m "Update CCTV" || exit 0
-          git push
+          # 檢查是否有變動，有變動才提交，沒變動就跳過不報錯
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "Update CCTV data"
+            git push
+          else
+            echo "No changes to commit"
+          fi
