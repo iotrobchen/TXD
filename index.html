@@ -1,57 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>新北市即時CCTV</title>
+    <title>鳶山堰即時影像</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
-<body>
-  <h2>新北市即時路況影像</h2>
-  <div id="images"></div>
-
-  <script>
-    const token = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJER2lKNFE5bFg4WldFajlNNEE2amFVNm9JOGJVQ3RYWGV6OFdZVzh3ZkhrIn0.eyJleHAiOjE3NzY5MzM3NzUsImlhdCI6MTc3Njg0NzM3NSwianRpIjoiMzNlM2FiM2EtOTdhNi00MjJkLWI5Y2YtMmU1NjRlOGVmZGI5IiwiaXNzIjoiaHR0cHM6Ly90ZHgudHJhbnNwb3J0ZGF0YS50dy9hdXRoL3JlYWxtcy9URFhDb25uZWN0Iiwic3ViIjoiMGQ0YmYxMzgtZTM2MS00MzM1LThmMzItY2E4YmEwZmNkY2M2IiwidHlwIjoiQmVhcmVyIiwiYXpwIjoiaW90cm9iY2hlbi1iNWI5M2NhYS1mMGNhLTQ1NWEiLCJhY3IiOiIxIiwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbInN0YXRpc3RpYyIsInByZW1pdW0iLCJwYXJraW5nRmVlIiwibWFhcyIsImFkdmFuY2VkIiwiZ2VvaW5mbyIsInZhbGlkYXRvciIsInRvdXJpc20iLCJoaXN0b3JpY2FsIiwiY3dhIiwiYmFzaWMiXX0sInNjb3BlIjoicHJvZmlsZSBlbWFpbCIsInVzZXIiOiI3YWVmMmM0MiJ9.iM8uhHyA4HthnuIbe1C-zKBw9HvAnt-ZsH-M2ClvnV0N5OPZgVfsYeE8dRhLBrUQOPZgQpruM4iKLn-umeIJB_Tg29cUVNITl8mBtOH__s-9tQalcRYQG_wbQUnj5hP8CXUcfzVrKrcXHQXjYjBBBREyYCVVNCUFbxkfYvOr8O5jlzIAUzV6iPhRJX0gDSwS3laONcXGTsoOnajmphRyzblus4QYtLldkASDba7OT7HoQB_F4S3Q0QAy5itdHXYYhm1u7kq5N5idGt7f35LvY-SAbkTuXXfYiHixMUk7xloJGhgDbqYVDaNOMws5zANalOmkQyHp3us9RDK7nGrsSw";
-
-    async function loadCCTV() {
-      const res = await fetch(
-        "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/NewTaipei?$format=JSON",
-        {
-          headers: {
-            "Authorization": "Bearer " + token
-          }
-        }
-      );
-
-      const data = await res.json();
-
-      console.log("CCTV總數：", data.length);
-
-      const container = document.getElementById("images");
-      container.innerHTML = "";
-
-      data.forEach(cctv => {
-
-        // 👉 有影像才顯示
-        if (cctv.CCTVPictures?.length > 0) {
-
-          const img = document.createElement("img");
-
-          // 防快取（很重要）
-          img.src = cctv.CCTVPictures[0].ImageUrl + "?t=" + Date.now();
-          img.width = 400;
-
-          const title = document.createElement("p");
-          title.innerText = cctv.LocationDescription || "未知位置";
-
-          container.appendChild(title);
-          container.appendChild(img);
-        }
-      });
-    }
-
-    loadCCTV();
-
-    // 每60秒更新一次
-    setInterval(loadCCTV, 60000);
-  </script>
+<body style="background:#000; color:#fff; text-align:center;">
+    <h2>鳶山堰即時影像</h2>
+    <video id="video" controls style="width:80%; max-width:800px;"></video>
+    <script>
+        fetch('./data.json')
+            .then(res => res.json())
+            .then(data => {
+                const url = data[0].VideoStreamURL; // 抓取清單第一個影像
+                const video = document.getElementById('video');
+                if (Hls.isSupported()) {
+                    var hls = new Hls();
+                    hls.loadSource(url);
+                    hls.attachMedia(video);
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = url;
+                }
+            });
+    </script>
 </body>
 </html>
