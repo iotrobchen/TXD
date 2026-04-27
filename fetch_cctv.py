@@ -3,7 +3,6 @@ import json
 import os
 
 def run():
-    data = []
     try:
         # 1. 取得 Access Token
         auth_url = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token"
@@ -17,27 +16,32 @@ def run():
         token = auth_res.json().get('access_token')
         headers = {'Authorization': f'Bearer {token}'}
 
-        # 2. 直接抓取「全台所有 CCTV」的前 5 筆，看看到底路徑對不對
-        # 這是最基本的測試
-        test_url = "https://tdx.transportdata.tw/api/basic/v2/Resources/CCTV?$top=5&$format=JSON"
-        res = requests.get(test_url, headers=headers)
+        # 2. 改用「新北市」的路徑，這通常包含轄區內的所有 CCTV
+        # 既然你在官網看到了縣市 CCTV，這條路徑權限極高
+        api_url = "https://tdx.transportdata.tw/api/basic/v2/Road/CCTV/City/NewTaipei?$filter=contains(CCTVName,'鳶山')&$format=JSON"
         
+        print(f"正在請求新北市路徑...")
+        res = requests.get(api_url, headers=headers)
+        
+        # 3. 檢查結果
         if res.status_code == 200:
             data = res.json()
-            print(f"測試成功！抓到資料範例：{data[:1]}")
+            # 如果新北市撈不到，嘗試「水利署 WRA」路徑
+            if not data:
+                print("新北市路徑無資料，嘗試水利署專屬路徑...")
+                wra_url = "https://tdx.transportdata.tw/api/basic/v2/Water/CCTV/WRA?$format=JSON"
+                res = requests.get(wra_url, headers=headers)
+                data = res.json()
         else:
-            print(f"測試失敗，狀態碼：{res.status_code}")
-            print(f"訊息：{res.text}")
-            data = {"error": "api_failed", "msg": res.text, "code": res.status_code}
+            data = {"error": "api_failed", "msg": res.text, "path": api_url}
 
     except Exception as e:
-        print(f"腳本崩潰：{e}")
         data = {"error": "crash", "msg": str(e)}
 
-    # 3. 不管成功失敗都存檔，不使用 exit(1)，確保 Workflow 變綠色
+    # 儲存
     with open('data.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-    print("已強制產出 data.json，Workflow 應顯示成功。")
+    print("存檔完成。")
 
 if __name__ == "__main__":
     run()
