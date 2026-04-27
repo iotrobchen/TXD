@@ -1,4 +1,1 @@
-{
-    "error": "all_paths_failed",
-    "last_res": "{\"message\":\"Resouce Not Found\"}"
-}
+{"error": "api_failed", "msg": "{\"Message\":\"odata\u8a9e\u6cd5\u932f\u8aa4: Could not find a property named 'CCTVName' on type 'PTX.Service.DTO.Traffic.Specification.V2.API.CCTV'.\"}"}
