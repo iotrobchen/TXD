@@ -1,3 +1,5 @@
 {
-    "message": "Resouce Not Found"
+    "error": "api_failed",
+    "msg": "{\"message\":\"Resouce Not Found\"}",
+    "code": 404
 }
