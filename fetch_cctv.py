@@ -3,58 +3,62 @@ import json
 import os
 
 def run():
+    # 1. 取得 Token
+    auth_url = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token"
+    auth_data = {
+        'grant_type': 'client_credentials',
+        'client_id': os.environ.get('TDX_CLIENT_ID').strip(),
+        'client_secret': os.environ.get('TDX_CLIENT_SECRET').strip()
+    }
+    
     try:
-        # 1. 取得 Token
-        auth_url = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token"
-        auth_data = {
-            'grant_type': 'client_credentials',
-            'client_id': os.environ.get('TDX_CLIENT_ID').strip(),
-            'client_secret': os.environ.get('TDX_CLIENT_SECRET').strip()
-        }
         auth_res = requests.post(auth_url, data=auth_data)
         token = auth_res.json().get('access_token')
         headers = {'Authorization': f'Bearer {token}', 'Accept': 'application/json'}
 
-        # 2. 定義來源
-        urls = {
-            "水利署": "https://tdx.transportdata.tw/api/basic/v2/Water/CCTV/WRA?$format=JSON",
-            "新北市": "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/NewTaipei?$format=JSON"
-        }
+        # 2. 探測清單 (涵蓋所有可能的鳶山堰存放路徑)
+        paths = [
+            {"name": "水利署-基礎", "url": "https://tdx.transportdata.tw/api/basic/v2/Water/CCTV/WRA"},
+            {"name": "水利署-一般", "url": "https://tdx.transportdata.tw/api/v2/Water/CCTV/WRA"},
+            {"name": "新北水利", "url": "https://tdx.transportdata.tw/api/basic/v2/Water/CCTV/City/NewTaipei"},
+            {"name": "新北交通", "url": "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV/City/NewTaipei"}
+        ]
         
         final_list = []
-        keywords = ['鳶山', '三峽']
+        diag_log = []
 
-        for source_name, url in urls.items():
-            print(f"正在抓取 {source_name}...")
-            res = requests.get(url, headers=headers)
+        for p in paths:
+            print(f"探測中: {p['name']}...")
+            res = requests.get(f"{p['url']}?$format=JSON", headers=headers)
+            
             if res.status_code == 200:
-                raw = res.json()
-                # 水利署格式是直接 list，道路格式在 'CCTVs'
-                items = raw if isinstance(raw, list) else raw.get('CCTVs', [])
+                data = res.json()
+                items = data if isinstance(data, list) else data.get('CCTVs', [])
                 
+                found_count = 0
                 for item in items:
-                    # 取得名稱 (試過所有可能的欄位)
-                    name = item.get('CCTVName') or item.get('SurveillanceDescription') or item.get('RoadName') or "未命名設備"
-                    # 取得網址
-                    link = item.get('VideoStreamURL') or item.get('VideoImageURL')
+                    name = item.get('CCTVName') or item.get('SurveillanceDescription') or item.get('RoadName', '')
+                    url = item.get('VideoStreamURL') or item.get('VideoImageURL')
                     
-                    # 關鍵字篩選
-                    if any(kw in str(name) for kw in keywords):
-                        final_list.append({
-                            "Name": name,
-                            "URL": link,
-                            "Source": source_name
-                        })
+                    # 同時搜 鳶山、三峽、水庫
+                    if url and any(kw in str(name) for kw in ['鳶山', '三峽', '水庫']):
+                        final_list.append({"Name": name, "URL": url, "Source": p['name']})
+                        found_count += 1
+                
+                diag_log.append(f"{p['name']}: 成功 (找到 {found_count} 筆)")
+            else:
+                diag_log.append(f"{p['name']}: 失敗 ({res.status_code})")
 
         # 3. 儲存
+        # 如果什麼都沒找到，就把診斷日誌存進去
+        if not final_list:
+            final_list = [{"Name": "診斷報告", "URL": "#", "Source": " | ".join(diag_log)}]
+
         with open('data.json', 'w', encoding='utf-8') as f:
             json.dump(final_list, f, ensure_ascii=False, indent=4)
-        print(f"成功存入 {len(final_list)} 筆資料。")
 
     except Exception as e:
-        print(f"錯誤: {e}")
-        with open('data.json', 'w', encoding='utf-8') as f:
-            json.dump([{"Name": "錯誤", "URL": "#", "Source": str(e)}], f)
+        print(f"連線異常: {e}")
 
 if __name__ == "__main__":
     run()
