@@ -1,5 +1,5 @@
 {
     "error": "api_failed",
     "msg": "{\"message\":\"Resouce Not Found\"}",
-    "code": 404
+    "path": "https://tdx.transportdata.tw/api/basic/v2/Road/CCTV/City/NewTaipei?$filter=contains(CCTVName,'鳶山')&$format=JSON"
 }
