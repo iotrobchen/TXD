@@ -2,20 +2,29 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>三峽區即時影像監控</title>
     <style>
-        body { font-family: sans-serif; background: #f0f2f5; padding: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-        .card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .video-container { position: relative; width: 100%; padding-top: 56.25%; background: #000; }
-        iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
-        .info { padding: 10px; }
-        .title { font-weight: bold; color: #333; margin-bottom: 5px; }
-        .desc { font-size: 0.9em; color: #666; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f7f9; padding: 20px; color: #333; }
+        h1 { text-align: center; color: #2c3e50; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; max-width: 1200px; margin: 0 auto; }
+        .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08); transition: transform 0.2s; cursor: pointer; text-decoration: none; color: inherit; display: block; }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+        .video-placeholder { 
+            width: 100%; height: 180px; background: #2c3e50; 
+            display: flex; align-items: center; justify-content: center; color: white; flex-direction: column;
+        }
+        .video-placeholder i { font-size: 2em; margin-bottom: 10px; }
+        .info { padding: 15px; border-top: 1px solid #eee; }
+        .title { font-weight: bold; font-size: 1.1em; margin-bottom: 5px; color: #007bff; }
+        .desc { font-size: 0.9em; color: #666; line-height: 1.4; }
+        .badge { display: inline-block; padding: 3px 8px; background: #e7f3ff; color: #007bff; border-radius: 4px; font-size: 0.8em; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <h1>三峽地區即時影像</h1>
+    <h1>📍 三峽地區即時路況</h1>
+    <p style="text-align: center; color: #888;">由於瀏覽器安全限制，請點擊下方卡片開啟即時影像視窗</p>
+    
     <div id="cctv-grid" class="grid">載入中...</div>
 
     <script>
@@ -23,18 +32,27 @@
             .then(res => res.json())
             .then(data => {
                 const grid = document.getElementById('cctv-grid');
+                if (!data || data.length === 0) {
+                    grid.innerHTML = '目前無資料。';
+                    return;
+                }
                 grid.innerHTML = '';
                 
                 data.forEach(item => {
-                    const card = document.createElement('div');
+                    const card = document.createElement('a');
                     card.className = 'card';
+                    card.href = item.VideoStreamURL;
+                    card.target = '_blank'; // 在新分頁開啟
+                    
                     card.innerHTML = `
-                        <div class="video-container">
-                            <iframe src="${item.VideoStreamURL}" allowfullscreen></iframe>
+                        <div class="video-placeholder">
+                            <span style="font-size: 40px;">📷</span>
+                            <span>點擊查看即時影像</span>
                         </div>
                         <div class="info">
-                            <div class="title">${item.RoadName || '未知路段'}</div>
+                            <div class="title">${item.RoadName || '一般道路'}</div>
                             <div class="desc">${item.SurveillanceDescription}</div>
+                            <span class="badge">設備編號: ${item.CCTVID}</span>
                         </div>
                     `;
                     grid.appendChild(card);
