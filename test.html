@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>遙控飛行場即時影像看板</title>
+    <title>高程YOYO班202601期飛場資訊觀測站</title>
     <style>
         body { font-family: sans-serif; background-color: #f4f4f4; margin: 20px; }
         .container { max-width: 1200px; margin: auto; }
@@ -26,7 +26,7 @@
 <body>
 
 <div class="container">
-    <h1>即時影像監控看板（完整資訊版）</h1>
+    <h1>高程YOYO班202601期飛場資訊觀測站</h1>
 
     <!-- 後村堰 -->
     <section class="location-section">
@@ -34,9 +34,42 @@
 
         <!-- 天氣 + 風場（同一排） -->
         <div class="widget-grid">
-            <iframe src="https://www.twipcam.com/widget/v1/wx-info?lat=24.98916663138627&lon=121.44011372563844" height="260"></iframe>
-            <iframe src="https://www.twipcam.com/widget/v1/wind?lat=24.98916663138627&lon=121.44011372563844&zoom=8" height="260"></iframe>
-        </div>       <div class="cam-card">
+            <iframe src="https://www.twipcam.com/widget/v1/wx-info?lat=24.960462333362326&lon=121.37928937808145" style="height: 28vh; min-height: 220px;"></iframe>
+            <iframe src="https://www.twipcam.com/widget/v1/wind?lat=24.960462333362326&lon=121.37928937808145&zoom=8" style="height: 28vh; min-height: 220px;"></iframe>
+        </div>
+
+        <!-- 監視器 -->
+        <div class="cam-grid">
+
+            <div class="cam-card">
+                <h3>樹林區大義路 / 柑園路二段</h3>
+                <a href="https://www.twipcam.com/cam/nwt-000274" target="_blank">
+                    <img src="https://c01.twipcam.com/cam/snapshot/nwt-000274.jpg">
+                </a>
+            </div>
+
+            <div class="cam-card">
+                <h3>國道三號 47K+200 北向</h3>
+                <img src="https://cctvn.freeway.gov.tw/abs2mjpg/bmjpg?camera=34720">
+            </div>
+
+        </div>
+    </section>
+
+    <!-- 浮洲環保公園 -->
+    <section class="location-section">
+        <h2>📍 新北市浮洲環保公園</h2>
+
+        <!-- 天氣 + 風場（同一排） -->
+        <div class="widget-grid">
+            <iframe src="https://www.twipcam.com/widget/v1/wx-info?lat=24.98916663138627&lon=121.44011372563844" style="height: 28vh; min-height: 220px;"></iframe>
+            <iframe src="https://www.twipcam.com/widget/v1/wind?lat=24.98916663138627&lon=121.44011372563844&zoom=8" style="height: 28vh; min-height: 220px;"></iframe>
+        </div>
+
+        <!-- 監視器 -->
+        <div class="cam-grid">
+
+            <div class="cam-card">
                 <h3>台65線 9K+600</h3>
                 <a href="https://www.twipcam.com/cam/t65-9k-600" target="_blank">
                     <img src="https://c01.twipcam.com/cam/snapshot/t65-10k-126.jpg">
